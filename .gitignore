@@ -1,0 +1,27 @@
+# Raw research archive: third-party manuals, DDK headers and driver sources gathered for
+# reference. Not redistributable, never committed. See research/README.md.
+/research/
+
+# Build outputs (the real builds live in ~/.cache/jornada-gpib, but keep the tree clean)
+/build/
+/dist/
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.a
+*.map
+*.tmp.s
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+
+# macOS
+.DS_Store
+._*
