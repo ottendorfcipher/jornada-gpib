@@ -340,6 +340,7 @@ static DWORD server_thread(LPVOID arg)
     sockaddr_in addr;
     int one = 1;
     (void)arg;
+    log_printf(L"server thread running");
     gw.listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (gw.listener == INVALID_SOCKET) {
         log_printf(L"socket failed: %u", WSAGetLastError());
@@ -362,6 +363,7 @@ static DWORD server_thread(LPVOID arg)
         int plen = sizeof peer;
         SOCKET c = accept(gw.listener, (sockaddr *)&peer, &plen);
         if (c == INVALID_SOCKET) {
+            log_printf(L"accept failed: %u", WSAGetLastError());
             break;
         }
         log_printf(L"client connected");
@@ -439,6 +441,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
     CreateWindowExW(0, L"BUTTON", L"Quit", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 160, 30, 64, 22, gw.win,
                     (HMENU)ID_QUIT, hInstance, NULL);
     gw.thread = CreateThread(NULL, 0, server_thread, NULL, 0, NULL);
+    if (gw.thread == NULL) {
+        log_printf(L"CreateThread failed: %u", GetLastError());
+        SetWindowTextW(gw.label, L"server thread failed, see \\gpibsrv.log");
+    }
     while (GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);

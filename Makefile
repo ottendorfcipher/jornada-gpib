@@ -26,7 +26,8 @@ CFLAGS    = -m3 -ml -O2 -std=gnu11 -Wall -Wextra -Werror -fshort-wchar -ffreesta
 LDFLAGS_COMMON = --subsystem wince:2.11 --major-os-version 2 --minor-os-version 11 \
                  --major-subsystem-version 2 --minor-subsystem-version 11 \
                  --file-alignment 0x200 --section-alignment 0x1000
-LDFLAGS_EXE = --image-base 0x10000 -e _WinMainCRTStartup $(LDFLAGS_COMMON)
+# 64 KB stack reserve: Windows CE sizes every thread's stack from the image header
+LDFLAGS_EXE = --image-base 0x10000 -e _WinMainCRTStartup --stack 0x10000,0x1000 $(LDFLAGS_COMMON)
 LDFLAGS_DLL = --dll --enable-reloc-section -e _DllMainCRTStartup $(LDFLAGS_COMMON)
 
 RT_SRC   = src/rt/crt.c src/rt/fmt.c
@@ -36,19 +37,19 @@ GPIB_CORE_OBJ = $(BUILD)/obj/gpib/tnt4882.o $(BUILD)/obj/gpib/gpib488.o
 GPIB_DRV_OBJ  = $(BUILD)/obj/gpib/drv_ce.o $(BUILD)/obj/gpib/drv_log.o $(BUILD)/obj/gpib/install.o \
                 $(BUILD)/obj/gpib/cis.o $(BUILD)/obj/gpib/pnpid.o $(BUILD)/obj/gpib/thunks_exports.o
 IMPORT_TABLES = $(TOOLS)/imports/coredll.txt $(TOOLS)/imports/winsock.txt
-THUNKS   = $(BUILD)/obj/rt/thunks_imports.o $(BUILD)/obj/rt/thunks_calls.o \
-           $(BUILD)/obj/rt/imports_coredll.o $(BUILD)/obj/rt/imports_winsock.o
+THUNKS   = $(BUILD)/obj/rt/thunks_imports.o $(BUILD)/obj/rt/thunks_calls.o $(BUILD)/obj/rt/imports.o
 EXE_ENTRY = $(BUILD)/obj/rt/entry_exe.o
 DLL_ENTRY = $(BUILD)/obj/rt/entry_dll.o
 
-.PHONY: all hello driver gpibtest gpibterm gpibsrv test toolchain clean
-all: hello driver gpibtest gpibterm gpibsrv
+.PHONY: all hello driver gpibtest gpibterm gpibsrv nettest test toolchain clean
+all: hello driver gpibtest gpibterm gpibsrv nettest
 
 hello: $(BUILD)/hello.exe
 driver: $(BUILD)/gpib.dll
 gpibtest: $(BUILD)/gpibtest.exe
 gpibterm: $(BUILD)/gpibterm.exe
 gpibsrv: $(BUILD)/gpibsrv.exe
+nettest: $(BUILD)/nettest.exe
 
 toolchain:
 	$(TOOLS)/build-toolchain.sh
@@ -76,11 +77,9 @@ $(BUILD)/obj/rt/thunks_imports.s: $(IMPORT_TABLES) $(TOOLS)/gen_thunks.py | dirs
 $(BUILD)/obj/rt/thunks_calls.s: $(TOOLS)/gen_thunks.py | dirs
 	$(PYTHON) $(TOOLS)/gen_thunks.py calls > $@
 
-$(BUILD)/obj/rt/imports_coredll.s: $(TOOLS)/imports/coredll.txt $(TOOLS)/mkimplib.py | dirs
-	$(PYTHON) $(TOOLS)/mkimplib.py coredll.dll $< > $@
-
-$(BUILD)/obj/rt/imports_winsock.s: $(TOOLS)/imports/winsock.txt $(TOOLS)/mkimplib.py | dirs
-	$(PYTHON) $(TOOLS)/mkimplib.py winsock.dll $< > $@
+# one object for every DLL: import descriptors must be contiguous (see mkimplib.py)
+$(BUILD)/obj/rt/imports.s: $(IMPORT_TABLES) $(TOOLS)/mkimplib.py | dirs
+	$(PYTHON) $(TOOLS)/mkimplib.py coredll.dll=$(TOOLS)/imports/coredll.txt winsock.dll=$(TOOLS)/imports/winsock.txt > $@
 
 $(BUILD)/obj/gpib/thunks_exports.s: $(TOOLS)/gpib_exports.txt $(TOOLS)/gen_thunks.py | dirs
 	$(PYTHON) $(TOOLS)/gen_thunks.py exports $< > $@
@@ -113,13 +112,19 @@ $(BUILD)/gpibsrv.exe: $(EXE_ENTRY) $(GPIBSRV_OBJ) $(RT_OBJ) $(THUNKS)
 	$(LD) -o $@ $(EXE_ENTRY) $(GPIBSRV_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/gpibsrv.map
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
+NETTEST_OBJ = $(BUILD)/obj/nettest/nettest.o $(BUILD)/obj/gpib/drv_log.o
+
+$(BUILD)/nettest.exe: $(EXE_ENTRY) $(NETTEST_OBJ) $(RT_OBJ) $(THUNKS)
+	$(LD) -o $@ $(EXE_ENTRY) $(NETTEST_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/nettest.map
+	$(PYTHON) $(TOOLS)/pefix.py $@
+
 $(BUILD)/gpib.dll: $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) src/gpib/gpib.def
 	$(LD) -o $@ $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) src/gpib/gpib.def $(LDFLAGS_DLL) -Map $(BUILD)/gpib.map
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
 dirs:
 	@mkdir -p $(BUILD)/obj/rt $(BUILD)/obj/ce $(BUILD)/obj/hello \
-	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/obj/gpibapi $(BUILD)/obj/gpibterm $(BUILD)/obj/gpibsrv $(BUILD)/lib
+	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/obj/gpibapi $(BUILD)/obj/gpibterm $(BUILD)/obj/gpibsrv $(BUILD)/obj/nettest $(BUILD)/lib
 
 # --- tests -------------------------------------------------------------------------------
 test:

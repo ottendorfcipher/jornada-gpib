@@ -60,23 +60,30 @@ def test_all_parameters_are_single_words():
 
 @pytest.mark.unit
 def test_mkimplib_renders_import_table(tmp_path, capsys):
-    text = mkimplib.render("coredll.dll", ["Sleep", "CreateThread"])
+    text = mkimplib.render([("coredll.dll", ["Sleep", "CreateThread"]), ("winsock.dll", ["socket"])])
     lines = [l.strip() for l in text.splitlines()]
-    assert '.section .idata$2,"w"' in lines and '.section .idata$7,"w"' in lines
+    assert lines.count('.section .idata$2,"w"') == 1     # one descriptor block for all DLLs
     assert lines.count(".rva\t.Lhn_Sleep") == 2          # lookup table and address table
     assert "__imp__Sleep:" in lines and ".globl\t__imp__CreateThread" in lines
-    assert '.asciz\t"coredll.dll"' in lines
+    assert '.asciz\t"coredll.dll"' in lines and '.asciz\t"winsock.dll"' in lines
+    # descriptors are contiguous: 5 fields for coredll immediately followed by 5 for winsock
+    d = lines.index(".rva\t.Lilt_coredll_dll")
+    assert lines[d + 5] == ".rva\t.Lilt_winsock_dll"
     assert lines.index(".Lilt_coredll_dll:") < lines.index(".Liat_coredll_dll:")
-    # every hint/name entry is 2-byte aligned and preceded by a WORD hint
     i = lines.index(".Lhn_CreateThread:")
     assert lines[i - 1] == ".align\t1" and lines[i + 1] == ".short\t0"
     with pytest.raises(ValueError):
-        mkimplib.render("bad name.dll", ["X"])
+        mkimplib.render([("bad name.dll", ["X"])])
     with pytest.raises(ValueError):
-        mkimplib.render("x.dll", [])
+        mkimplib.render([("x.dll", [])])
+    with pytest.raises(ValueError):
+        mkimplib.render([("a.dll", ["X"]), ("b.dll", ["X"])])
+    with pytest.raises(ValueError):
+        mkimplib.render([])
     table = tmp_path / "t.txt"
     table.write_text("Sleep 1\n")
-    assert mkimplib.main(["mkimplib.py", "coredll.dll", str(table)]) == 0
+    assert mkimplib.main(["mkimplib.py", "coredll.dll=" + str(table)]) == 0
     assert "__imp__Sleep" in capsys.readouterr().out
     assert mkimplib.main(["mkimplib.py"]) == 2
-    assert mkimplib.main(["mkimplib.py", "x.dll", str(tmp_path / "missing")]) == 1
+    assert mkimplib.main(["mkimplib.py", "nonsense"]) == 1
+    assert mkimplib.main(["mkimplib.py", "x.dll=" + str(tmp_path / "missing")]) == 1
