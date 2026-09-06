@@ -500,3 +500,20 @@ int tnt_parallel_poll(tnt_chip *c, uint8_t *response)
     auxmr(c, c->auxrg);
     return TNT_OK;
 }
+
+void tnt_snapshot(tnt_chip *c, tnt_regs *r)
+{
+    r->isr1 = R(c, TNT_ISR1);
+    r->isr2 = R(c, TNT_ISR2);
+    c->isr1 |= r->isr1;
+    c->isr2 |= r->isr2;
+    r->isr0 = R(c, TNT_ISR0);
+    r->isr3 = R(c, TNT_ISR3);
+    r->sts1 = R(c, TNT_STS1);
+    r->sts2 = R(c, TNT_STS2);
+    r->adsr = R(c, TNT_ADSR);
+    r->bsr = R(c, TNT_BSR);
+    r->sasr = R(c, TNT_SASR);
+    r->cnt0 = R(c, TNT_CNT0);
+    r->cnt1 = R(c, TNT_CNT1);
+}

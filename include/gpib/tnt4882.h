@@ -289,7 +289,14 @@ uint8_t tnt_bus_lines(tnt_chip *c);   /* BSR */
 uint8_t tnt_adsr(tnt_chip *c);
 int  tnt_is_cic(tnt_chip *c);
 
-/* Low-level transfer used by command/write; exposed for tests. */
+/* Low-level transfer used by command/write; exposed for tests and diagnostics. */
 int  tnt_transfer_out(tnt_chip *c, const uint8_t *buf, unsigned n, unsigned flags, unsigned *sent);
+
+/* Register snapshot for diagnostics. Reading ISR0/ISR1/ISR2 clears them on the chip; the
+ * values are also folded into the chip's accumulated status so nothing is lost. */
+typedef struct tnt_regs {
+    uint8_t isr0, isr1, isr2, isr3, sts1, sts2, adsr, bsr, sasr, cnt0, cnt1;
+} tnt_regs;
+void tnt_snapshot(tnt_chip *c, tnt_regs *r);
 
 #endif /* GPIB_TNT4882_H */

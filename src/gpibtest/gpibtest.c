@@ -17,6 +17,10 @@
  *   jornada run '\gpibtest.exe' 'reg r 1f'        read a card register (hex offset)
  *   jornada run '\gpibtest.exe' 'reg w 1c 22'     write a card register
  *   jornada run '\gpibtest.exe' 'bench 5 N'       read N bytes as fast as possible (throughput)
+ *   jornada run '\gpibtest.exe' 'snap'            chip register snapshot
+ *   jornada run '\gpibtest.exe' 'atn 1|0'         take control (ATN on) / go to standby
+ *   jornada run '\gpibtest.exe' 'raw c|d|e HEX..' one FIFO transfer of the given bytes as commands (c),
+ *                                                   data (d) or data with EOI (e), no addressing
  *
  * Results are appended to \gpibtest.txt. Read them with:  jornada get '\gpibtest.txt'
  */
@@ -174,6 +178,71 @@ static void cmd_cis(void)
         log_hex(label, ci.raw + off + 2, len);
         off += 2 + len;
     }
+}
+
+static void log_regs(LPCWSTR label, const gpib_regs *g)
+{
+    log_printf(L"%s: isr0 %02x isr1 %02x isr2 %02x isr3 %02x sts1 %02x sts2 %02x adsr %02x bsr %02x sasr %02x cnt %02x%02x",
+               label, g->isr0, g->isr1, g->isr2, g->isr3, g->sts1, g->sts2, g->adsr, g->bsr, g->sasr, g->cnt1, g->cnt0);
+}
+
+static void cmd_snap(void)
+{
+    gpib_regs g;
+    DWORD got = 0;
+    if (!DeviceIoControl(ib_driver_handle(), IOCTL_GPIB_SNAPSHOT, NULL, 0, &g, sizeof g, &got, NULL)) {
+        log_printf(L"SNAPSHOT failed: %u", GetLastError());
+        return;
+    }
+    log_regs(L"regs", &g);
+}
+
+static void cmd_atn(int on)
+{
+    UINT32 v = on ? 1u : 0u;
+    gpib_result r;
+    DWORD got = 0;
+    if (!DeviceIoControl(ib_driver_handle(), IOCTL_GPIB_ATN, &v, sizeof v, &r, sizeof r, &got, NULL)) {
+        log_printf(L"ATN failed: %u", GetLastError());
+        return;
+    }
+    log_printf(L"atn %u: status %d", v, r.status);
+}
+
+static void cmd_raw(unsigned argc, LPWSTR *argv)
+{
+    UINT8 buf[sizeof(gpib_raw_out) + 64];
+    gpib_raw_out *h = (gpib_raw_out *)buf;
+    gpib_raw_result r;
+    DWORD got = 0;
+    unsigned i;
+    unsigned n = 0;
+    if (argc < 3) {
+        log_printf(L"usage: raw c|d|e HEX...");
+        return;
+    }
+    h->flags = 0;
+    if (argv[1][0] == 'c') {
+        h->flags = GPIB_RAW_COMMAND;
+    } else if (argv[1][0] == 'e') {
+        h->flags = GPIB_RAW_EOI;
+    }
+    for (i = 2; i < argc && n < 64; i++) {
+        int v = 0;
+        if (!parse_int(argv[i], 16, &v)) {
+            log_printf(L"bad hex byte %s", argv[i]);
+            return;
+        }
+        buf[sizeof *h + n++] = (UINT8)v;
+    }
+    h->length = n;
+    if (!DeviceIoControl(ib_driver_handle(), IOCTL_GPIB_RAW_OUT, buf, sizeof *h + n, &r, sizeof r, &got, NULL)) {
+        log_printf(L"RAW_OUT failed: %u", GetLastError());
+        return;
+    }
+    log_printf(L"raw flags 0x%x %u bytes: status %d sent %u", h->flags, n, r.status, r.sent);
+    log_regs(L"  before", &r.before);
+    log_regs(L"  after", &r.after);
 }
 
 static void cmd_probe(void)
@@ -400,6 +469,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
         cmd_reg(argc, argv);
     } else if (rt_wcscmp(argv[0], L"bench") == 0) {
         cmd_bench(pad, n > 0 ? n : 65536);
+    } else if (rt_wcscmp(argv[0], L"snap") == 0) {
+        cmd_snap();
+    } else if (rt_wcscmp(argv[0], L"atn") == 0) {
+        cmd_atn(pad);
+    } else if (rt_wcscmp(argv[0], L"raw") == 0) {
+        cmd_raw(argc, argv);
     } else {
         log_printf(L"unknown command %s", argv[0]);
     }

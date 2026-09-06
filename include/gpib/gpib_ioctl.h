@@ -36,6 +36,9 @@
 #define IOCTL_GPIB_REGISTER      GPIB_CTL(15)  /* in: gpib_register_op; out: gpib_register_op (raw register access, debugging) */
 #define IOCTL_GPIB_SET_DEVICE    GPIB_CTL(16)  /* in: gpib_address (address used by ReadFile/WriteFile) */
 #define IOCTL_GPIB_CIS           GPIB_CTL(17)  /* out: gpib_cis_info (raw tuples captured at init) */
+#define IOCTL_GPIB_SNAPSHOT      GPIB_CTL(18)  /* out: gpib_regs (diagnostic register snapshot) */
+#define IOCTL_GPIB_RAW_OUT       GPIB_CTL(19)  /* in: gpib_raw_out + bytes; out: gpib_raw_result (one FIFO transfer, no addressing) */
+#define IOCTL_GPIB_ATN           GPIB_CTL(20)  /* in: UINT32 (1 = take control, 0 = go to standby); out: gpib_result */
 
 /* Driver status codes (gpib_result.status); mirror the chip driver's return codes. */
 #define GPIB_ST_OK           0
@@ -115,6 +118,25 @@ typedef struct gpib_cis_info {
     char pnpid[128];
     UINT8 raw[GPIB_CIS_RAW_MAX];              /* code, length, data ... */
 } gpib_cis_info;
+
+typedef struct gpib_regs {
+    UINT32 isr0, isr1, isr2, isr3, sts1, sts2, adsr, bsr, sasr, cnt0, cnt1;
+} gpib_regs;
+
+#define GPIB_RAW_EOI     0x01   /* same values as the chip driver's TNT_XF_* */
+#define GPIB_RAW_COMMAND 0x02
+
+typedef struct gpib_raw_out {
+    UINT32 flags;
+    UINT32 length;               /* bytes following this header */
+} gpib_raw_out;
+
+typedef struct gpib_raw_result {
+    INT32 status;
+    UINT32 sent;
+    gpib_regs before;            /* snapshot just before the transfer */
+    gpib_regs after;             /* snapshot right after */
+} gpib_raw_result;
 
 #define GPIB_REG_READ  0
 #define GPIB_REG_WRITE 1

@@ -456,6 +456,8 @@ void GPB_PowerUp(DWORD hDeviceContext)
 
 /* ---- IOCTL dispatch --------------------------------------------------------------- */
 
+static void fill_regs(gpib_device *d, gpib_regs *g);
+
 static BOOL put_result(PBYTE out, DWORD outlen, PDWORD actual, int status, UINT32 count, UINT32 end)
 {
     gpib_result r;
@@ -543,6 +545,12 @@ static BOOL ioctl_write(gpib_device *d, PBYTE in, DWORD inlen, PBYTE out, DWORD 
     if (rc == GPIB_ST_OK) {
         rc = gpib_write(&d->ctl, x.addr.pad, x.addr.sad, in + sizeof x, x.length,
                         (x.flags & GPIB_XF_EOI) != 0, &sent);
+    }
+    if (rc != GPIB_ST_OK) {
+        gpib_regs g;
+        fill_regs(d, &g);
+        log_printf(L"write to %d/%d failed: status %d sent %u; isr1 %02x isr0 %02x sts1 %02x sts2 %02x adsr %02x bsr %02x sasr %02x",
+                   x.addr.pad, x.addr.sad, rc, sent, g.isr1, g.isr0, g.sts1, g.sts2, g.adsr, g.bsr, g.sasr);
     }
     return put_result(out, outlen, actual, rc, sent, 0);
 }
@@ -647,6 +655,71 @@ static BOOL ioctl_cis(gpib_device *d, PBYTE out, DWORD outlen, PDWORD actual)
     memcpy(out, &ci, sizeof ci);
     if (actual != NULL) {
         *actual = sizeof ci;
+    }
+    return TRUE;
+}
+
+static void fill_regs(gpib_device *d, gpib_regs *g)
+{
+    tnt_regs r;
+    tnt_snapshot(&d->chip, &r);
+    g->isr0 = r.isr0;
+    g->isr1 = r.isr1;
+    g->isr2 = r.isr2;
+    g->isr3 = r.isr3;
+    g->sts1 = r.sts1;
+    g->sts2 = r.sts2;
+    g->adsr = r.adsr;
+    g->bsr = r.bsr;
+    g->sasr = r.sasr;
+    g->cnt0 = r.cnt0;
+    g->cnt1 = r.cnt1;
+}
+
+static BOOL ioctl_snapshot(gpib_device *d, PBYTE out, DWORD outlen, PDWORD actual)
+{
+    gpib_regs g;
+    if (out == NULL || outlen < sizeof g || !d->card_present) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    fill_regs(d, &g);
+    memcpy(out, &g, sizeof g);
+    if (actual != NULL) {
+        *actual = sizeof g;
+    }
+    return TRUE;
+}
+
+static BOOL ioctl_raw_out(gpib_device *d, PBYTE in, DWORD inlen, PBYTE out, DWORD outlen, PDWORD actual)
+{
+    gpib_raw_out h;
+    gpib_raw_result r;
+    unsigned sent = 0;
+    if (in == NULL || inlen < sizeof h || out == NULL || outlen < sizeof r) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    memcpy(&h, in, sizeof h);
+    if (h.length > inlen - sizeof h || h.length > MAX_XFER_INLINE) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    memset(&r, 0, sizeof r);
+    r.status = check_ready(d);
+    if (r.status == GPIB_ST_OK) {
+        fill_regs(d, &r.before);
+        r.status = tnt_transfer_out(&d->chip, in + sizeof h, h.length, h.flags, &sent);
+        fill_regs(d, &r.after);
+    }
+    r.sent = sent;
+    log_printf(L"raw out flags 0x%x len %u -> status %d sent %u; before isr1 %02x sts1 %02x sts2 %02x adsr %02x bsr %02x; after isr1 %02x isr0 %02x isr3 %02x sts1 %02x sts2 %02x adsr %02x bsr %02x sasr %02x cnt %02x%02x",
+               h.flags, h.length, r.status, sent, r.before.isr1, r.before.sts1, r.before.sts2, r.before.adsr, r.before.bsr,
+               r.after.isr1, r.after.isr0, r.after.isr3, r.after.sts1, r.after.sts2, r.after.adsr, r.after.bsr, r.after.sasr,
+               r.after.cnt1, r.after.cnt0);
+    memcpy(out, &r, sizeof r);
+    if (actual != NULL) {
+        *actual = sizeof r;
     }
     return TRUE;
 }
@@ -773,6 +846,23 @@ static BOOL dispatch(gpib_open *o, DWORD code, PBYTE in, DWORD inlen, PBYTE out,
         return ioctl_probe(d, out, outlen, actual);
     case IOCTL_GPIB_CIS:
         return ioctl_cis(d, out, outlen, actual);
+    case IOCTL_GPIB_SNAPSHOT:
+        return ioctl_snapshot(d, out, outlen, actual);
+    case IOCTL_GPIB_RAW_OUT:
+        return ioctl_raw_out(d, in, inlen, out, outlen, actual);
+    case IOCTL_GPIB_ATN: {
+        UINT32 on = 0;
+        if (in == NULL || inlen < sizeof on) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        memcpy(&on, in, sizeof on);
+        rc = check_ready(d);
+        if (rc == GPIB_ST_OK) {
+            rc = on ? tnt_take_control(&d->chip, 0) : tnt_go_to_standby(&d->chip);
+        }
+        return put_result(out, outlen, actual, rc, 0, 0);
+    }
     case IOCTL_GPIB_REGISTER:
         return ioctl_register(d, in, inlen, out, outlen, actual);
     default:
