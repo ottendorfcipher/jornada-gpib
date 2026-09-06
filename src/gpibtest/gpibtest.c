@@ -30,7 +30,7 @@
 #include "gpib/ib.h"
 #include "rt/rt.h"
 
-#define MAX_ARGS 8
+#define MAX_ARGS 16
 #define READ_BUFFER 4096
 #define TIMEOUT_CODE IB_T3s
 
@@ -125,6 +125,23 @@ static void log_bytes_as_text(LPCWSTR label, const char *buf, long n)
     }
     line[k] = 0;
     log_printf(L"%s (%d bytes): %S", label, n, line);
+}
+
+/* Rejoin argv[first..] with single spaces (instrument commands contain spaces). */
+static void join_args(unsigned argc, LPWSTR *argv, unsigned first, WCHAR *out, unsigned cap)
+{
+    unsigned n = 0;
+    unsigned i;
+    for (i = first; i < argc; i++) {
+        LPCWSTR a = argv[i];
+        if (i > first && n + 1 < cap) {
+            out[n++] = ' ';
+        }
+        while (*a != 0 && n + 1 < cap) {
+            out[n++] = *a++;
+        }
+    }
+    out[n] = 0;
 }
 
 static int open_device(int pad)
@@ -442,11 +459,15 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
     } else if (rt_wcscmp(argv[0], L"idn") == 0) {
         cmd_query(pad, L"*IDN?");
     } else if (rt_wcscmp(argv[0], L"write") == 0 && argc >= 3) {
-        cmd_write(pad, argv[2]);
+        WCHAR text[256];
+        join_args(argc, argv, 2, text, 256);
+        cmd_write(pad, text);
     } else if (rt_wcscmp(argv[0], L"read") == 0) {
         cmd_read(pad, argc >= 3 && n > 0 ? n : 256);
     } else if (rt_wcscmp(argv[0], L"query") == 0 && argc >= 3) {
-        cmd_query(pad, argv[2]);
+        WCHAR text[256];
+        join_args(argc, argv, 2, text, 256);
+        cmd_query(pad, text);
     } else if (rt_wcscmp(argv[0], L"spoll") == 0) {
         cmd_spoll(pad);
     } else if (rt_wcscmp(argv[0], L"clear") == 0) {
