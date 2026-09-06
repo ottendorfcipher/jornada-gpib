@@ -30,21 +30,20 @@ LDFLAGS_EXE = --image-base 0x10000 -e _WinMainCRTStartup $(LDFLAGS_COMMON)
 LDFLAGS_DLL = --dll --enable-reloc-section -e _DllMainCRTStartup $(LDFLAGS_COMMON)
 
 RT_SRC   = src/rt/crt.c src/rt/fmt.c
-RT_OBJ   = $(patsubst src/%.c,$(BUILD)/obj/%.o,$(RT_SRC))
+RT_OBJ   = $(patsubst src/%.c,$(BUILD)/obj/%.o,$(RT_SRC)) $(BUILD)/obj/rt/divide.o
 CE_OBJ   = $(BUILD)/obj/ce/ce_cs.o
 GPIB_CORE_OBJ = $(BUILD)/obj/gpib/tnt4882.o $(BUILD)/obj/gpib/gpib488.o
 GPIB_DRV_OBJ  = $(BUILD)/obj/gpib/drv_ce.o $(BUILD)/obj/gpib/drv_log.o $(BUILD)/obj/gpib/install.o \
-                $(BUILD)/obj/gpib/thunks_exports.o
+                $(BUILD)/obj/gpib/cis.o $(BUILD)/obj/gpib/pnpid.o $(BUILD)/obj/gpib/thunks_exports.o
 THUNKS   = $(BUILD)/obj/rt/thunks_imports.o $(BUILD)/obj/rt/thunks_calls.o $(BUILD)/obj/rt/imports_coredll.o
 EXE_ENTRY = $(BUILD)/obj/rt/entry_exe.o
 DLL_ENTRY = $(BUILD)/obj/rt/entry_dll.o
 
-.PHONY: all hello driver cisdump gpibtest test toolchain clean
-all: hello driver cisdump gpibtest
+.PHONY: all hello driver gpibtest test toolchain clean
+all: hello driver gpibtest
 
 hello: $(BUILD)/hello.exe
 driver: $(BUILD)/gpib.dll
-cisdump: $(BUILD)/cisdump.exe
 gpibtest: $(BUILD)/gpibtest.exe
 
 toolchain:
@@ -62,6 +61,10 @@ $(BUILD)/obj/%.o: $(BUILD)/obj/%.s
 
 .PRECIOUS: $(BUILD)/obj/%.s.elf $(BUILD)/obj/%.s
 
+# hand-written assembly is already in the COFF dialect
+$(BUILD)/obj/rt/divide.s: src/rt/divide.s | dirs
+	cp $< $@
+
 # --- generated assembly: calling-convention thunks and the coredll import table ----------
 $(BUILD)/obj/rt/thunks_imports.s: $(TOOLS)/coredll_imports.txt $(TOOLS)/gen_thunks.py | dirs
 	$(PYTHON) $(TOOLS)/gen_thunks.py imports $< > $@
@@ -76,14 +79,14 @@ $(BUILD)/obj/gpib/thunks_exports.s: $(TOOLS)/gpib_exports.txt $(TOOLS)/gen_thunk
 	$(PYTHON) $(TOOLS)/gen_thunks.py exports $< > $@
 
 # --- targets -----------------------------------------------------------------------------
+$(BUILD)/obj/hello/import_names.h: $(TOOLS)/coredll_imports.txt $(TOOLS)/mknames.py | dirs
+	$(PYTHON) $(TOOLS)/mknames.py $< > $@
+
+$(BUILD)/obj/hello/hello.s.elf: $(BUILD)/obj/hello/import_names.h
+$(BUILD)/obj/hello/hello.s.elf: INCLUDES += -I$(BUILD)/obj/hello
+
 $(BUILD)/hello.exe: $(EXE_ENTRY) $(BUILD)/obj/hello/hello.o $(RT_OBJ) $(THUNKS)
 	$(LD) -o $@ $(EXE_ENTRY) $(BUILD)/obj/hello/hello.o $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/hello.map
-	$(PYTHON) $(TOOLS)/pefix.py $@
-
-CISDUMP_OBJ = $(BUILD)/obj/cisdump/cisdump.o $(BUILD)/obj/gpib/pnpid.o $(BUILD)/obj/gpib/drv_log.o
-
-$(BUILD)/cisdump.exe: $(EXE_ENTRY) $(CISDUMP_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS)
-	$(LD) -o $@ $(EXE_ENTRY) $(CISDUMP_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/cisdump.map
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
 GPIBTEST_OBJ = $(BUILD)/obj/gpibtest/gpibtest.o $(BUILD)/obj/gpibapi/ib.o $(BUILD)/obj/gpib/drv_log.o
@@ -97,7 +100,7 @@ $(BUILD)/gpib.dll: $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
 dirs:
-	@mkdir -p $(BUILD)/obj/rt $(BUILD)/obj/ce $(BUILD)/obj/hello $(BUILD)/obj/cisdump \
+	@mkdir -p $(BUILD)/obj/rt $(BUILD)/obj/ce $(BUILD)/obj/hello \
 	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/obj/gpibapi $(BUILD)/lib
 
 # --- tests -------------------------------------------------------------------------------

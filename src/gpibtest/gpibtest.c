@@ -1,6 +1,7 @@
 /* gpibtest.exe: command-line bring-up tool for the driver, driven through jornada-link.
  *
  *   jornada run '\gpibtest.exe' 'info'            driver state, CIS window, chip probe values
+ *   jornada run '\gpibtest.exe' 'cis'             CIS tuples captured at driver load, PnP id, windows
  *   jornada run '\gpibtest.exe' 'probe'           re-run the reset self-test
  *   jornada run '\gpibtest.exe' 'lines'           bus line and address status
  *   jornada run '\gpibtest.exe' 'ifc'             interface clear
@@ -148,6 +149,31 @@ static void cmd_info(void)
     log_printf(L"config: timeout %u ms t1 %u ns pad %d sad %d eos 0x%02x flags 0x%x",
                info.config.timeout_ms, info.config.t1_ns, info.config.pad, info.config.sad,
                info.config.eos, info.config.eos_flags);
+}
+
+static void cmd_cis(void)
+{
+    static gpib_cis_info ci;
+    DWORD got = 0;
+    UINT32 off = 0;
+    if (!DeviceIoControl(ib_driver_handle(), IOCTL_GPIB_CIS, NULL, 0, &ci, sizeof ci, &got, NULL)) {
+        log_printf(L"CIS failed: %u", GetLastError());
+        return;
+    }
+    log_printf(L"%u tuples, manufacturer 0x%04x card 0x%04x function %u", ci.tuples, ci.manufacturer_id,
+               ci.card_id, ci.function_type);
+    log_printf(L"PnP id: %S", ci.pnpid);
+    log_printf(L"windows granted: 8-bit %u, 16-bit %u", ci.window_8bit_ok, ci.window_16bit_ok);
+    while (off + 2 <= ci.raw_len) {
+        WCHAR label[32];
+        UINT32 len = ci.raw[off + 1];
+        rt_fmt(label, 32, L"tuple 0x%02x", (UINT32)ci.raw[off]);
+        if (off + 2 + len > ci.raw_len) {
+            break;
+        }
+        log_hex(label, ci.raw + off + 2, len);
+        off += 2 + len;
+    }
 }
 
 static void cmd_probe(void)
@@ -332,6 +358,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
     }
     if (rt_wcscmp(argv[0], L"info") == 0) {
         cmd_info();
+    } else if (rt_wcscmp(argv[0], L"cis") == 0) {
+        cmd_cis();
     } else if (rt_wcscmp(argv[0], L"probe") == 0) {
         cmd_probe();
     } else if (rt_wcscmp(argv[0], L"lines") == 0) {

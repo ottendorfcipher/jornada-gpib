@@ -35,6 +35,7 @@
 #define IOCTL_GPIB_PROBE         GPIB_CTL(14)  /* out: gpib_probe_info (re-runs the reset self-test, re-initialises) */
 #define IOCTL_GPIB_REGISTER      GPIB_CTL(15)  /* in: gpib_register_op; out: gpib_register_op (raw register access, debugging) */
 #define IOCTL_GPIB_SET_DEVICE    GPIB_CTL(16)  /* in: gpib_address (address used by ReadFile/WriteFile) */
+#define IOCTL_GPIB_CIS           GPIB_CTL(17)  /* out: gpib_cis_info (raw tuples captured at init) */
 
 /* Driver status codes (gpib_result.status); mirror the chip driver's return codes. */
 #define GPIB_ST_OK           0
@@ -103,6 +104,17 @@ typedef struct gpib_info {
     gpib_probe_info probe;
     gpib_config config;
 } gpib_info;
+
+#define GPIB_CIS_RAW_MAX 1024
+
+typedef struct gpib_cis_info {
+    UINT32 tuples;
+    UINT32 raw_len;
+    UINT32 manufacturer_id, card_id, function_type;
+    UINT32 window_8bit_ok, window_16bit_ok;   /* what the socket driver granted at init */
+    char pnpid[128];
+    UINT8 raw[GPIB_CIS_RAW_MAX];              /* code, length, data ... */
+} gpib_cis_info;
 
 #define GPIB_REG_READ  0
 #define GPIB_REG_WRITE 1

@@ -9,6 +9,7 @@
  */
 #include "ce/ce_api.h"
 #include "rt/rt.h"
+#include "import_names.h"
 
 static const WCHAR REPORT_PATH[] = L"\\hello.txt";
 
@@ -42,9 +43,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
     int remainder = -1000003 % 10;           /* exercises __modsi3 */
     WCHAR caption[64];
 
-    (void)hPrev;
-    (void)nCmdShow;
-
     h = CreateFileW(REPORT_PATH, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
         MessageBoxW(NULL, L"CreateFileW failed", L"hello", MB_OK | MB_ICONERROR);
@@ -58,7 +56,31 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
     GetVersionExW(&vi);
 
     report(h, L"jornada-gpib hello: toolchain validation");
-    report(h, L"hInstance=%p cmdline=[%s]", (void *)hInstance, lpCmdLine);
+    write_line(h, "step1 plain write_line");
+    report(h, L"step2 char %c", 'X');
+    report(h, L"step3 two chars %c%c", 'A', 'B');
+    report(h, L"step4 three chars %c%c%c (one stack argument)", 'A', 'B', 'C');
+    report(h, L"step5 wide string %s", L"str");
+    report(h, L"step6 number %u", 7u);
+    report(h, L"step7 hex %x", 255u);
+    report(h, L"step8 pointer %p", (void *)hInstance);
+    report(h, L"entry args: r4=%p r5=%p r6=%p r7=%d (not dereferenced)", (void *)hInstance, (void *)hPrev,
+           (void *)lpCmdLine, nCmdShow);
+    report(h, L"command line: [%s]", lpCmdLine);
+    {
+        HMODULE core = LoadLibraryW(L"coredll.dll");
+        unsigned i;
+        unsigned missing = 0;
+        report(h, L"coredll.dll module %p", (void *)core);
+        for (i = 0; i < sizeof IMPORT_NAMES / sizeof IMPORT_NAMES[0]; i++) {
+            PVOID f = GetProcAddressW(core, IMPORT_NAMES[i]);
+            if (f == NULL) {
+                report(h, L"MISSING import: %s", IMPORT_NAMES[i]);
+                missing++;
+            }
+        }
+        report(h, L"%u imports checked, %u missing", (unsigned)(sizeof IMPORT_NAMES / sizeof IMPORT_NAMES[0]), missing);
+    }
     report(h, L"os version %u.%u build %u platform %u", vi.dwMajorVersion, vi.dwMinorVersion,
            vi.dwBuildNumber, vi.dwPlatformId);
     report(h, L"page size %u, processor type %u, arch %u", si.dwPageSize, si.dwProcessorType,

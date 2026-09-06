@@ -3,15 +3,12 @@
 CreateThread 6
 ExitThread 1
 TerminateThread 2
-GetCurrentThread 0
-GetCurrentThreadId 0
 SetThreadPriority 2
 GetThreadPriority 1
 Sleep 1
 GetTickCount 0
 CreateEventW 4
-SetEvent 1
-ResetEvent 1
+EventModify 2
 CreateMutexW 3
 ReleaseMutex 1
 WaitForSingleObject 2
@@ -25,7 +22,6 @@ SetLastError 1
 GetSystemInfo 1
 GetVersionExW 1
 GetLocalTime 1
-GetCommandLineW 0
 QueryPerformanceCounter 1
 QueryPerformanceFrequency 1
 LoadLibraryW 1

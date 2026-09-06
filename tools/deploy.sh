@@ -2,7 +2,6 @@
 # Deploy build outputs to the Jornada over jornada-link and run the bring-up steps.
 #
 #   tools/deploy.sh hello      copy hello.exe, run it, fetch \hello.txt
-#   tools/deploy.sh cisdump    copy cisdump.exe, run it, fetch \cisdump.txt
 #   tools/deploy.sh driver     copy gpib.dll to \Windows and gpibtest.exe to the root
 #   tools/deploy.sh test ARGS  run gpibtest.exe with ARGS and fetch \gpibtest.txt
 #   tools/deploy.sh log        fetch \gpib.log (the driver's log)
@@ -38,13 +37,6 @@ case "${1:-}" in
         "$J" run '\hello.exe'
         wait_for_process 3
         fetch '\hello.txt' hello.txt
-        ;;
-    cisdump)
-        need_link
-        "$J" put "$HERE/build/cisdump.exe" '\cisdump.exe'
-        "$J" run '\cisdump.exe'
-        wait_for_process 4
-        fetch '\cisdump.txt' cisdump.txt
         ;;
     driver)
         need_link

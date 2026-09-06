@@ -8,6 +8,7 @@
  */
 #include "ce/ce_api.h"
 #include "ce/ce_cardserv.h"
+#include "gpib/cis.h"
 #include "gpib/drv_log.h"
 #include "gpib/gpib488.h"
 #include "gpib/gpib_ioctl.h"
@@ -31,6 +32,8 @@ typedef struct gpib_device {
     BOOL configured;
     BOOL card_present;
     BOOL chip_ok;
+    UINT32 window_8bit_ok, window_16bit_ok;
+    cis_capture cis;
     tnt_probe_result probe;
     tnt_io tio;
     tnt_chip chip;
@@ -163,22 +166,34 @@ static BOOL pick_io_window(gpib_device *d)
     return TRUE;
 }
 
-static BOOL request_window(gpib_device *d)
+static CARD_WINDOW_HANDLE try_window(gpib_device *d, UINT16 attrs, LPCWSTR label)
 {
     CARD_WINDOW_PARMS wp;
+    CARD_WINDOW_HANDLE w;
     memset(&wp, 0, sizeof wp);
     wp.hSocket.uSocket = CS_SOCKET_NUMBER(d->sock);
     wp.hSocket.uFunction = CS_SOCKET_FUNCTION(d->sock);
-    wp.fAttributes = WIN_ATTR_IO_SPACE;
+    wp.fAttributes = attrs;
     wp.uWindowSize = d->io_length;
     wp.fAccessSpeed = WIN_SPEED_USE_WAIT;
-    d->window = cs_RequestWindow(&d->cs, d->client, &wp);
-    if (d->window == NULL) {
-        log_printf(L"CardRequestWindow(io, %u bytes) failed: %u", d->io_length, GetLastError());
-        return FALSE;
+    w = cs_RequestWindow(&d->cs, d->client, &wp);
+    log_printf(L"CardRequestWindow(%s, %u bytes): %S (error %u)", label, d->io_length,
+               w != NULL ? "granted" : "refused", w != NULL ? 0 : GetLastError());
+    return w;
+}
+
+/* Probe what the socket driver grants, then keep an 8-bit window (v1 uses byte access only). */
+static BOOL request_window(gpib_device *d)
+{
+    CARD_WINDOW_HANDLE w16 = try_window(d, WIN_ATTR_IO_SPACE | WIN_ATTR_16BIT, L"16-bit I/O");
+    d->window_16bit_ok = w16 != NULL;
+    if (w16 != NULL) {
+        cs_ReleaseWindow(&d->cs, w16);
     }
+    d->window = try_window(d, WIN_ATTR_IO_SPACE, L"8-bit I/O");
+    d->window_8bit_ok = d->window != NULL;
     d->window_16bit = 0;
-    return TRUE;
+    return d->window != NULL;
 }
 
 static BOOL configure_card(gpib_device *d)
@@ -276,6 +291,7 @@ static gpib_device *bringup(LPCWSTR active_key)
         log_printf(L"CardRegisterClient failed: %u", GetLastError());
         goto fail;
     }
+    cis_capture_socket(&d->cs, d->sock, &d->cis);
     if (!pick_io_window(d) || !request_window(d)) {
         goto fail;
     }
@@ -596,6 +612,30 @@ static BOOL ioctl_register(gpib_device *d, PBYTE in, DWORD inlen, PBYTE out, DWO
     return TRUE;
 }
 
+static BOOL ioctl_cis(gpib_device *d, PBYTE out, DWORD outlen, PDWORD actual)
+{
+    gpib_cis_info ci;
+    if (out == NULL || outlen < sizeof ci) {
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return FALSE;
+    }
+    memset(&ci, 0, sizeof ci);
+    ci.tuples = d->cis.tuples;
+    ci.raw_len = d->cis.raw_len < GPIB_CIS_RAW_MAX ? d->cis.raw_len : GPIB_CIS_RAW_MAX;
+    ci.manufacturer_id = d->cis.manufacturer_id;
+    ci.card_id = d->cis.card_id;
+    ci.function_type = d->cis.function_type;
+    ci.window_8bit_ok = d->window_8bit_ok;
+    ci.window_16bit_ok = d->window_16bit_ok;
+    memcpy(ci.pnpid, d->cis.pnpid, sizeof ci.pnpid);
+    memcpy(ci.raw, d->cis.raw, ci.raw_len);
+    memcpy(out, &ci, sizeof ci);
+    if (actual != NULL) {
+        *actual = sizeof ci;
+    }
+    return TRUE;
+}
+
 static BOOL ioctl_lines(gpib_device *d, PBYTE out, DWORD outlen, PDWORD actual)
 {
     gpib_lines_info li;
@@ -716,6 +756,8 @@ static BOOL dispatch(gpib_open *o, DWORD code, PBYTE in, DWORD inlen, PBYTE out,
         return put_result(out, outlen, actual, rc, stb, 0);
     case IOCTL_GPIB_PROBE:
         return ioctl_probe(d, out, outlen, actual);
+    case IOCTL_GPIB_CIS:
+        return ioctl_cis(d, out, outlen, actual);
     case IOCTL_GPIB_REGISTER:
         return ioctl_register(d, in, inlen, out, outlen, actual);
     default:

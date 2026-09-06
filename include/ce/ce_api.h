@@ -5,7 +5,9 @@
  * is `_xt_<Name>`; the table of names and argument counts lives in tools/coredll_imports.txt
  * and must stay in sync with this header (tests/test_headers.py checks that).
  *
- * Only the wide-character ("W") entry points exist on Windows CE.
+ * Only the wide-character ("W") entry points exist on Windows CE. The loader resolves a
+ * missing import to NULL instead of failing, so every name here was verified against the
+ * device's coredll (hello.exe checks them at run time).
  */
 #ifndef CE_API_H
 #define CE_API_H
@@ -18,15 +20,17 @@
 HANDLE CreateThread(LPSECURITY_ATTRIBUTES, DWORD stack, LPTHREAD_START_ROUTINE, LPVOID, DWORD flags, LPDWORD id) CE_IMPORT(CreateThread);
 VOID   ExitThread(DWORD) CE_IMPORT(ExitThread);
 BOOL   TerminateThread(HANDLE, DWORD) CE_IMPORT(TerminateThread);
-HANDLE GetCurrentThread(VOID) CE_IMPORT(GetCurrentThread);
-DWORD  GetCurrentThreadId(VOID) CE_IMPORT(GetCurrentThreadId);
 BOOL   SetThreadPriority(HANDLE, int) CE_IMPORT(SetThreadPriority);
 int    GetThreadPriority(HANDLE) CE_IMPORT(GetThreadPriority);
 VOID   Sleep(DWORD ms) CE_IMPORT(Sleep);
 DWORD  GetTickCount(VOID) CE_IMPORT(GetTickCount);
 HANDLE CreateEventW(LPSECURITY_ATTRIBUTES, BOOL manual, BOOL initial, LPCWSTR name) CE_IMPORT(CreateEventW);
-BOOL   SetEvent(HANDLE) CE_IMPORT(SetEvent);
-BOOL   ResetEvent(HANDLE) CE_IMPORT(ResetEvent);
+BOOL   EventModify(HANDLE, DWORD op) CE_IMPORT(EventModify);
+#define EVENT_PULSE 1
+#define EVENT_RESET 2
+#define EVENT_SET   3
+#define SetEvent(h)   EventModify((h), EVENT_SET)      /* CE 2.11 coredll has no SetEvent export */
+#define ResetEvent(h) EventModify((h), EVENT_RESET)
 HANDLE CreateMutexW(LPSECURITY_ATTRIBUTES, BOOL owner, LPCWSTR name) CE_IMPORT(CreateMutexW);
 BOOL   ReleaseMutex(HANDLE) CE_IMPORT(ReleaseMutex);
 DWORD  WaitForSingleObject(HANDLE, DWORD ms) CE_IMPORT(WaitForSingleObject);
@@ -40,7 +44,6 @@ VOID   SetLastError(DWORD) CE_IMPORT(SetLastError);
 VOID   GetSystemInfo(LPSYSTEM_INFO) CE_IMPORT(GetSystemInfo);
 BOOL   GetVersionExW(LPOSVERSIONINFOW) CE_IMPORT(GetVersionExW);
 VOID   GetLocalTime(LPSYSTEMTIME) CE_IMPORT(GetLocalTime);
-LPWSTR GetCommandLineW(VOID) CE_IMPORT(GetCommandLineW);
 BOOL   QueryPerformanceCounter(PLARGE_INTEGER) CE_IMPORT(QueryPerformanceCounter);
 BOOL   QueryPerformanceFrequency(PLARGE_INTEGER) CE_IMPORT(QueryPerformanceFrequency);
 

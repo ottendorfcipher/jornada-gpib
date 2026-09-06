@@ -62,26 +62,11 @@ int memcmp(const void *a, const void *b, size_t n)
     return 0;
 }
 
-/* Integer division helpers. SH-3 has no divide instruction and this project does not link
- * libgcc, so GCC's calls to __udivsi3 / __sdivsi3 / __umodsi3 / __modsi3 resolve here.
- * Restoring shift-subtract division; speed is irrelevant for our use (timeouts, formatting). */
-unsigned int __udivsi3(unsigned int n, unsigned int d)
-{
-    unsigned int q = 0;
-    unsigned int r = 0;
-    int i;
-    if (d == 0) {
-        return 0;
-    }
-    for (i = 31; i >= 0; i--) {
-        r = (r << 1) | ((n >> i) & 1u);
-        if (r >= d) {
-            r -= d;
-            q |= 1u << i;
-        }
-    }
-    return q;
-}
+/* Modulo helpers. GCC calls these with the ordinary C convention; the quotient routines
+ * they use (__udivsi3, __sdivsi3) live in divide.s because GCC calls those with a special
+ * register contract on SH-3. */
+unsigned int __udivsi3(unsigned int n, unsigned int d);
+int __sdivsi3(int n, int d);
 
 unsigned int __umodsi3(unsigned int n, unsigned int d)
 {
@@ -91,16 +76,11 @@ unsigned int __umodsi3(unsigned int n, unsigned int d)
     return n - __udivsi3(n, d) * d;
 }
 
-int __sdivsi3(int n, int d)
-{
-    unsigned int un = (unsigned int)(n < 0 ? -n : n);
-    unsigned int ud = (unsigned int)(d < 0 ? -d : d);
-    unsigned int q = __udivsi3(un, ud);
-    return ((n < 0) != (d < 0)) ? -(int)q : (int)q;
-}
-
 int __modsi3(int n, int d)
 {
+    if (d == 0) {
+        return 0;
+    }
     return n - __sdivsi3(n, d) * d;
 }
 #endif /* RT_HOST_TEST */
