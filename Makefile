@@ -35,16 +35,20 @@ CE_OBJ   = $(BUILD)/obj/ce/ce_cs.o
 GPIB_CORE_OBJ = $(BUILD)/obj/gpib/tnt4882.o $(BUILD)/obj/gpib/gpib488.o
 GPIB_DRV_OBJ  = $(BUILD)/obj/gpib/drv_ce.o $(BUILD)/obj/gpib/drv_log.o $(BUILD)/obj/gpib/install.o \
                 $(BUILD)/obj/gpib/cis.o $(BUILD)/obj/gpib/pnpid.o $(BUILD)/obj/gpib/thunks_exports.o
-THUNKS   = $(BUILD)/obj/rt/thunks_imports.o $(BUILD)/obj/rt/thunks_calls.o $(BUILD)/obj/rt/imports_coredll.o
+IMPORT_TABLES = $(TOOLS)/imports/coredll.txt $(TOOLS)/imports/winsock.txt
+THUNKS   = $(BUILD)/obj/rt/thunks_imports.o $(BUILD)/obj/rt/thunks_calls.o \
+           $(BUILD)/obj/rt/imports_coredll.o $(BUILD)/obj/rt/imports_winsock.o
 EXE_ENTRY = $(BUILD)/obj/rt/entry_exe.o
 DLL_ENTRY = $(BUILD)/obj/rt/entry_dll.o
 
-.PHONY: all hello driver gpibtest test toolchain clean
-all: hello driver gpibtest
+.PHONY: all hello driver gpibtest gpibterm gpibsrv test toolchain clean
+all: hello driver gpibtest gpibterm gpibsrv
 
 hello: $(BUILD)/hello.exe
 driver: $(BUILD)/gpib.dll
 gpibtest: $(BUILD)/gpibtest.exe
+gpibterm: $(BUILD)/gpibterm.exe
+gpibsrv: $(BUILD)/gpibsrv.exe
 
 toolchain:
 	$(TOOLS)/build-toolchain.sh
@@ -66,21 +70,24 @@ $(BUILD)/obj/rt/divide.s: src/rt/divide.s | dirs
 	cp $< $@
 
 # --- generated assembly: calling-convention thunks and the coredll import table ----------
-$(BUILD)/obj/rt/thunks_imports.s: $(TOOLS)/coredll_imports.txt $(TOOLS)/gen_thunks.py | dirs
-	$(PYTHON) $(TOOLS)/gen_thunks.py imports $< > $@
+$(BUILD)/obj/rt/thunks_imports.s: $(IMPORT_TABLES) $(TOOLS)/gen_thunks.py | dirs
+	cat $(IMPORT_TABLES) | $(PYTHON) $(TOOLS)/gen_thunks.py imports /dev/stdin > $@
 
 $(BUILD)/obj/rt/thunks_calls.s: $(TOOLS)/gen_thunks.py | dirs
 	$(PYTHON) $(TOOLS)/gen_thunks.py calls > $@
 
-$(BUILD)/obj/rt/imports_coredll.s: $(TOOLS)/coredll_imports.txt $(TOOLS)/mkimplib.py | dirs
+$(BUILD)/obj/rt/imports_coredll.s: $(TOOLS)/imports/coredll.txt $(TOOLS)/mkimplib.py | dirs
 	$(PYTHON) $(TOOLS)/mkimplib.py coredll.dll $< > $@
+
+$(BUILD)/obj/rt/imports_winsock.s: $(TOOLS)/imports/winsock.txt $(TOOLS)/mkimplib.py | dirs
+	$(PYTHON) $(TOOLS)/mkimplib.py winsock.dll $< > $@
 
 $(BUILD)/obj/gpib/thunks_exports.s: $(TOOLS)/gpib_exports.txt $(TOOLS)/gen_thunks.py | dirs
 	$(PYTHON) $(TOOLS)/gen_thunks.py exports $< > $@
 
 # --- targets -----------------------------------------------------------------------------
-$(BUILD)/obj/hello/import_names.h: $(TOOLS)/coredll_imports.txt $(TOOLS)/mknames.py | dirs
-	$(PYTHON) $(TOOLS)/mknames.py $< > $@
+$(BUILD)/obj/hello/import_names.h: $(IMPORT_TABLES) $(TOOLS)/mknames.py | dirs
+	$(PYTHON) $(TOOLS)/mknames.py $(IMPORT_TABLES) > $@
 
 $(BUILD)/obj/hello/hello.s.elf: $(BUILD)/obj/hello/import_names.h
 $(BUILD)/obj/hello/hello.s.elf: INCLUDES += -I$(BUILD)/obj/hello
@@ -95,13 +102,24 @@ $(BUILD)/gpibtest.exe: $(EXE_ENTRY) $(GPIBTEST_OBJ) $(RT_OBJ) $(THUNKS)
 	$(LD) -o $@ $(EXE_ENTRY) $(GPIBTEST_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/gpibtest.map
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
+GPIBTERM_OBJ = $(BUILD)/obj/gpibterm/gpibterm.o $(BUILD)/obj/gpibapi/ib.o
+GPIBSRV_OBJ  = $(BUILD)/obj/gpibsrv/gpibsrv.o $(BUILD)/obj/gpibapi/ib.o $(BUILD)/obj/gpib/drv_log.o
+
+$(BUILD)/gpibterm.exe: $(EXE_ENTRY) $(GPIBTERM_OBJ) $(RT_OBJ) $(THUNKS)
+	$(LD) -o $@ $(EXE_ENTRY) $(GPIBTERM_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/gpibterm.map
+	$(PYTHON) $(TOOLS)/pefix.py $@
+
+$(BUILD)/gpibsrv.exe: $(EXE_ENTRY) $(GPIBSRV_OBJ) $(RT_OBJ) $(THUNKS)
+	$(LD) -o $@ $(EXE_ENTRY) $(GPIBSRV_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/gpibsrv.map
+	$(PYTHON) $(TOOLS)/pefix.py $@
+
 $(BUILD)/gpib.dll: $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) src/gpib/gpib.def
 	$(LD) -o $@ $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) src/gpib/gpib.def $(LDFLAGS_DLL) -Map $(BUILD)/gpib.map
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
 dirs:
 	@mkdir -p $(BUILD)/obj/rt $(BUILD)/obj/ce $(BUILD)/obj/hello \
-	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/obj/gpibapi $(BUILD)/lib
+	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/obj/gpibapi $(BUILD)/obj/gpibterm $(BUILD)/obj/gpibsrv $(BUILD)/lib
 
 # --- tests -------------------------------------------------------------------------------
 test:

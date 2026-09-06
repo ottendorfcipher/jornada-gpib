@@ -32,7 +32,7 @@ def _header_decls() -> dict[str, int]:
 
 
 def _table() -> dict[str, int]:
-    with open(ROOT / "tools/coredll_imports.txt", encoding="utf-8") as fh:
+    with open(ROOT / "tools/imports/coredll.txt", encoding="utf-8") as fh:
         return {e.name: e.nargs for e in gt.parse_table(fh)}
 
 
@@ -41,7 +41,9 @@ def test_header_and_import_table_agree():
     decls = _header_decls()
     table = _table()
     assert decls, "no CE_IMPORT declarations found"
-    assert set(decls) == set(table), (set(decls) ^ set(table))
+    # every declared function has a thunk entry; the table may carry extra names that the
+    # GUI/socket headers declare (checked separately)
+    assert set(decls) <= set(table), (set(decls) - set(table))
     mismatched = {n: (decls[n], table[n]) for n in decls if decls[n] != table[n]}
     assert not mismatched, f"argument count mismatch (header, table): {mismatched}"
 

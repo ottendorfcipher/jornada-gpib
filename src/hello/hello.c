@@ -68,18 +68,21 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
            (void *)lpCmdLine, nCmdShow);
     report(h, L"command line: [%s]", lpCmdLine);
     {
-        HMODULE core = LoadLibraryW(L"coredll.dll");
-        unsigned i;
-        unsigned missing = 0;
-        report(h, L"coredll.dll module %p", (void *)core);
-        for (i = 0; i < sizeof IMPORT_NAMES / sizeof IMPORT_NAMES[0]; i++) {
-            PVOID f = GetProcAddressW(core, IMPORT_NAMES[i]);
-            if (f == NULL) {
-                report(h, L"MISSING import: %s", IMPORT_NAMES[i]);
-                missing++;
+        unsigned m;
+        for (m = 0; m < sizeof IMPORT_MODULES / sizeof IMPORT_MODULES[0]; m++) {
+            const import_module *mod = &IMPORT_MODULES[m];
+            HMODULE dll = LoadLibraryW(mod->dll);
+            unsigned i;
+            unsigned missing = 0;
+            report(h, L"%s module %p", mod->dll, (void *)dll);
+            for (i = 0; i < mod->count; i++) {
+                if (dll == NULL || GetProcAddressW(dll, mod->names[i]) == NULL) {
+                    report(h, L"MISSING import: %s!%s", mod->dll, mod->names[i]);
+                    missing++;
+                }
             }
+            report(h, L"%s: %u imports checked, %u missing", mod->dll, mod->count, missing);
         }
-        report(h, L"%u imports checked, %u missing", (unsigned)(sizeof IMPORT_NAMES / sizeof IMPORT_NAMES[0]), missing);
     }
     report(h, L"os version %u.%u build %u platform %u", vi.dwMajorVersion, vi.dwMinorVersion,
            vi.dwBuildNumber, vi.dwPlatformId);
