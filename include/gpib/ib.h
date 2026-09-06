@@ -86,6 +86,7 @@ int ibtrg(int ud);
 int ibloc(int ud);
 int ibrsp(int ud, char *spr);
 int ibtmo(int ud, int v);
+int ibtmo_ms(int ud, unsigned ms);       /* exact timeout in milliseconds (0 = none) */
 int ibeot(int ud, int v);
 int ibeos(int ud, int v);
 int ibpct(int ud);

@@ -380,6 +380,16 @@ int ibrsp(int ud, char *spr)
     return ok(0, 0);
 }
 
+int ibtmo_ms(int ud, unsigned ms)
+{
+    ib_device *d = device(ud);
+    if (d == NULL) {
+        return fail(IB_EARG, 0);
+    }
+    d->timeout_ms = ms;
+    return ok(0, 0);
+}
+
 int ibtmo(int ud, int v)
 {
     ib_device *d = device(ud);

@@ -26,7 +26,7 @@
 #include "rt/rt.h"
 
 #define PORT 1234
-#define VERSION_TEXT "jornada-gpib gateway 0.1 (Prologix GPIB-ETHERNET compatible)"
+#define VERSION_TEXT "jornada-gpib gateway 0.2 (Prologix GPIB-ETHERNET compatible)"
 #define LINE_MAX 1024
 #define READ_MAX 8192
 #define ID_QUIT 1
@@ -91,6 +91,8 @@ static int open_target(void)
     int ud = ibdev(0, gw.pad, gw.sad, timeout_code(gw.read_tmo_ms), gw.eoi, 0);
     if (ud < 0) {
         log_printf(L"ibdev(%d,%d) failed: %S", gw.pad, gw.sad, ib_error_name(iberr));
+    } else {
+        ibtmo_ms(ud, gw.read_tmo_ms);   /* honour ++read_tmo_ms exactly, not the NI ladder */
     }
     return ud;
 }
@@ -267,6 +269,7 @@ static void controller_command(SOCKET s, const char *cmd)
         ud = ibdev(0, pad, IB_NO_SAD, timeout_code(gw.read_tmo_ms), 1, 0);
         if (ud >= 0) {
             int failed;
+            ibtmo_ms(ud, gw.read_tmo_ms);
             ibrsp(ud, &stb);
             failed = (ibsta & IB_ERR) != 0;
             if (failed) {
@@ -373,7 +376,7 @@ static DWORD server_thread(LPVOID arg)
     addr.sin_port = htons(PORT);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(gw.listener, (const sockaddr *)&addr, sizeof addr) == SOCKET_ERROR ||
-        listen(gw.listener, 1) == SOCKET_ERROR) {
+        listen(gw.listener, 4) == SOCKET_ERROR) {
         log_printf(L"bind/listen failed: %u", WSAGetLastError());
         closesocket(gw.listener);
         return 1;
@@ -389,6 +392,7 @@ static DWORD server_thread(LPVOID arg)
         }
         log_printf(L"client connected");
         gw.client = c;
+        gw.requests = 0;
         setsockopt(c, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof one);
         serve_client(c);
         closesocket(c);
