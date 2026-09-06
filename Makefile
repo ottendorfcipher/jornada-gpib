@@ -32,14 +32,20 @@ LDFLAGS_DLL = --dll --enable-reloc-section -e _DllMainCRTStartup $(LDFLAGS_COMMO
 RT_SRC   = src/rt/crt.c src/rt/fmt.c
 RT_OBJ   = $(patsubst src/%.c,$(BUILD)/obj/%.o,$(RT_SRC))
 CE_OBJ   = $(BUILD)/obj/ce/ce_cs.o
+GPIB_CORE_OBJ = $(BUILD)/obj/gpib/tnt4882.o $(BUILD)/obj/gpib/gpib488.o
+GPIB_DRV_OBJ  = $(BUILD)/obj/gpib/drv_ce.o $(BUILD)/obj/gpib/drv_log.o $(BUILD)/obj/gpib/install.o \
+                $(BUILD)/obj/gpib/thunks_exports.o
 THUNKS   = $(BUILD)/obj/rt/thunks_imports.o $(BUILD)/obj/rt/thunks_calls.o $(BUILD)/obj/rt/imports_coredll.o
 EXE_ENTRY = $(BUILD)/obj/rt/entry_exe.o
 DLL_ENTRY = $(BUILD)/obj/rt/entry_dll.o
 
-.PHONY: all hello test toolchain clean
-all: hello
+.PHONY: all hello driver cisdump gpibtest test toolchain clean
+all: hello driver cisdump gpibtest
 
 hello: $(BUILD)/hello.exe
+driver: $(BUILD)/gpib.dll
+cisdump: $(BUILD)/cisdump.exe
+gpibtest: $(BUILD)/gpibtest.exe
 
 toolchain:
 	$(TOOLS)/build-toolchain.sh
@@ -66,14 +72,33 @@ $(BUILD)/obj/rt/thunks_calls.s: $(TOOLS)/gen_thunks.py | dirs
 $(BUILD)/obj/rt/imports_coredll.s: $(TOOLS)/coredll_imports.txt $(TOOLS)/mkimplib.py | dirs
 	$(PYTHON) $(TOOLS)/mkimplib.py coredll.dll $< > $@
 
+$(BUILD)/obj/gpib/thunks_exports.s: $(TOOLS)/gpib_exports.txt $(TOOLS)/gen_thunks.py | dirs
+	$(PYTHON) $(TOOLS)/gen_thunks.py exports $< > $@
+
 # --- targets -----------------------------------------------------------------------------
 $(BUILD)/hello.exe: $(EXE_ENTRY) $(BUILD)/obj/hello/hello.o $(RT_OBJ) $(THUNKS)
 	$(LD) -o $@ $(EXE_ENTRY) $(BUILD)/obj/hello/hello.o $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/hello.map
 	$(PYTHON) $(TOOLS)/pefix.py $@
 
+CISDUMP_OBJ = $(BUILD)/obj/cisdump/cisdump.o $(BUILD)/obj/gpib/pnpid.o $(BUILD)/obj/gpib/drv_log.o
+
+$(BUILD)/cisdump.exe: $(EXE_ENTRY) $(CISDUMP_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS)
+	$(LD) -o $@ $(EXE_ENTRY) $(CISDUMP_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/cisdump.map
+	$(PYTHON) $(TOOLS)/pefix.py $@
+
+GPIBTEST_OBJ = $(BUILD)/obj/gpibtest/gpibtest.o $(BUILD)/obj/gpibapi/ib.o $(BUILD)/obj/gpib/drv_log.o
+
+$(BUILD)/gpibtest.exe: $(EXE_ENTRY) $(GPIBTEST_OBJ) $(RT_OBJ) $(THUNKS)
+	$(LD) -o $@ $(EXE_ENTRY) $(GPIBTEST_OBJ) $(RT_OBJ) $(THUNKS) $(LDFLAGS_EXE) -Map $(BUILD)/gpibtest.map
+	$(PYTHON) $(TOOLS)/pefix.py $@
+
+$(BUILD)/gpib.dll: $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) src/gpib/gpib.def
+	$(LD) -o $@ $(DLL_ENTRY) $(GPIB_DRV_OBJ) $(GPIB_CORE_OBJ) $(CE_OBJ) $(RT_OBJ) $(THUNKS) src/gpib/gpib.def $(LDFLAGS_DLL) -Map $(BUILD)/gpib.map
+	$(PYTHON) $(TOOLS)/pefix.py $@
+
 dirs:
 	@mkdir -p $(BUILD)/obj/rt $(BUILD)/obj/ce $(BUILD)/obj/hello $(BUILD)/obj/cisdump \
-	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/lib
+	          $(BUILD)/obj/gpib $(BUILD)/obj/gpibtest $(BUILD)/obj/gpibapi $(BUILD)/lib
 
 # --- tests -------------------------------------------------------------------------------
 test:

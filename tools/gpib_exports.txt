@@ -1,0 +1,3 @@
+# gpib.dll entry points that take more than four argument words and therefore need an
+# export thunk (Microsoft caller -> GCC callee). The C implementation is <Name>_impl.
+GPB_IOControl 7

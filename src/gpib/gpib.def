@@ -1,0 +1,13 @@
+LIBRARY gpib.dll
+EXPORTS
+    GPB_Init
+    GPB_Deinit
+    GPB_Open
+    GPB_Close
+    GPB_Read
+    GPB_Write
+    GPB_Seek
+    GPB_IOControl
+    GPB_PowerUp
+    GPB_PowerDown
+    Install_Driver
