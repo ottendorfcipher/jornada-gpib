@@ -298,7 +298,8 @@ static void update_status(void)
     if (!g.driver_ok) {
         if (ibfind_board() == 0) {
             g.driver_ok = TRUE;
-            log_line(L"driver GPB1: opened");
+            ibsic(0);
+            log_line(L"driver GPB1: opened, interface clear %S", (ibsta & IB_ERR) ? ib_error_name(iberr) : "sent");
         } else {
             SetWindowTextW(g.status, L"driver not loaded: insert the GPIB card");
             return;

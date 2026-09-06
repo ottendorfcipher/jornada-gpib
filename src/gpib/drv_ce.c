@@ -48,6 +48,9 @@ typedef struct gpib_open {
     gpib_address current;       /* used by ReadFile/WriteFile */
 } gpib_open;
 
+static int check_ready(gpib_device *d);
+static int ensure_cic(gpib_device *d);
+
 /* ---- register access for the chip driver ------------------------------------------- */
 
 static UINT8 io_read8(void *ctx, unsigned off)
@@ -247,6 +250,27 @@ static void chip_bringup(gpib_device *d)
     tnt_set_timeout(&d->chip, d->config.timeout_ms);
     d->chip_ok = rc == TNT_OK;
     log_printf(L"tnt_init: %d (system controller %S)", rc, (d->chip.io->read8(d, TNT_STS1) & TNT_S_SC) ? "yes" : "no");
+    if (d->chip_ok) {
+        /* Take charge of the bus right away, as a system controller does at power-up. */
+        rc = gpib_interface_clear(&d->ctl);
+        log_printf(L"interface clear at load: %d, CIC %S", rc, tnt_is_cic(&d->chip) ? "yes" : "no");
+    }
+}
+
+/* Bus operations need the card to be controller in charge; after a fresh load, a resume or a
+ * bus reset by another device it may not be. Re-assert IFC once when that happens. */
+static int ensure_cic(gpib_device *d)
+{
+    int rc = check_ready(d);
+    if (rc != GPIB_ST_OK) {
+        return rc;
+    }
+    if (tnt_is_cic(&d->chip)) {
+        return GPIB_ST_OK;
+    }
+    rc = gpib_interface_clear(&d->ctl);
+    log_printf(L"not controller in charge: interface clear -> %d", rc);
+    return rc == TNT_OK ? GPIB_ST_OK : rc;
 }
 
 static void teardown(gpib_device *d)
@@ -411,7 +435,7 @@ DWORD GPB_Read(DWORD hOpenContext, LPVOID pBuffer, DWORD Count)
         return (DWORD)-1;
     }
     EnterCriticalSection(&o->dev->lock);
-    rc = check_ready(o->dev);
+    rc = ensure_cic(o->dev);
     if (rc == GPIB_ST_OK) {
         rc = gpib_read(&o->dev->ctl, o->current.pad, o->current.sad, pBuffer, Count, &got, &end);
     }
@@ -428,7 +452,7 @@ DWORD GPB_Write(DWORD hOpenContext, LPCVOID pBuffer, DWORD Count)
         return (DWORD)-1;
     }
     EnterCriticalSection(&o->dev->lock);
-    rc = check_ready(o->dev);
+    rc = ensure_cic(o->dev);
     if (rc == GPIB_ST_OK) {
         rc = gpib_write(&o->dev->ctl, o->current.pad, o->current.sad, pBuffer, Count, 1, &sent);
     }
@@ -541,7 +565,7 @@ static BOOL ioctl_write(gpib_device *d, PBYTE in, DWORD inlen, PBYTE out, DWORD 
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    rc = check_ready(d);
+    rc = ensure_cic(d);
     if (rc == GPIB_ST_OK) {
         rc = gpib_write(&d->ctl, x.addr.pad, x.addr.sad, in + sizeof x, x.length,
                         (x.flags & GPIB_XF_EOI) != 0, &sent);
@@ -571,7 +595,7 @@ static BOOL ioctl_read(gpib_device *d, PBYTE in, DWORD inlen, PBYTE out, DWORD o
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    rc = check_ready(d);
+    rc = ensure_cic(d);
     if (rc == GPIB_ST_OK) {
         rc = gpib_read(&d->ctl, x.addr.pad, x.addr.sad, out + sizeof r, x.length, &got, &end);
     }
@@ -802,7 +826,7 @@ static BOOL dispatch(gpib_open *o, DWORD code, PBYTE in, DWORD inlen, PBYTE out,
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        rc = check_ready(d);
+        rc = ensure_cic(d);
         if (rc == GPIB_ST_OK) {
             rc = gpib_send_commands(&d->ctl, in, inlen);
         }
@@ -814,7 +838,7 @@ static BOOL dispatch(gpib_open *o, DWORD code, PBYTE in, DWORD inlen, PBYTE out,
         if (!get_address(in, inlen, &a)) {
             return FALSE;
         }
-        rc = check_ready(d);
+        rc = ensure_cic(d);
         if (rc == GPIB_ST_OK) {
             if (code == IOCTL_GPIB_CLEAR) {
                 rc = gpib_clear(&d->ctl, a.pad, a.sad);
@@ -828,7 +852,7 @@ static BOOL dispatch(gpib_open *o, DWORD code, PBYTE in, DWORD inlen, PBYTE out,
         }
         return put_result(out, outlen, actual, rc, 0, 0);
     case IOCTL_GPIB_LOCAL_LOCKOUT:
-        rc = check_ready(d);
+        rc = ensure_cic(d);
         if (rc == GPIB_ST_OK) {
             rc = gpib_local_lockout(&d->ctl);
         }
@@ -837,7 +861,7 @@ static BOOL dispatch(gpib_open *o, DWORD code, PBYTE in, DWORD inlen, PBYTE out,
         if (!get_address(in, inlen, &a)) {
             return FALSE;
         }
-        rc = check_ready(d);
+        rc = ensure_cic(d);
         if (rc == GPIB_ST_OK) {
             rc = gpib_serial_poll(&d->ctl, a.pad, a.sad, &stb);
         }

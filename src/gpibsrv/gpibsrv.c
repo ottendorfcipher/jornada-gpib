@@ -11,6 +11,7 @@
  *   ++read [eoi|<byte>]    read from the instrument until EOI / the byte / timeout
  *   ++read_tmo_ms [ms]     read timeout (default 3000)
  *   ++ifc  ++clr  ++trg  ++loc  ++llo  ++spoll [pad]  ++srq  ++ver  ++mode [1]  ++rst  ++help
+ *   ++quit                 stop the gateway (extension)
  * ESC (0x1B) escapes the next byte in instrument data (Prologix convention).
  *
  * A small window with a Quit button keeps the process visible; the socket loop runs on a
@@ -87,7 +88,11 @@ static int timeout_code(unsigned ms)
 
 static int open_target(void)
 {
-    return ibdev(0, gw.pad, gw.sad, timeout_code(gw.read_tmo_ms), gw.eoi, 0);
+    int ud = ibdev(0, gw.pad, gw.sad, timeout_code(gw.read_tmo_ms), gw.eoi, 0);
+    if (ud < 0) {
+        log_printf(L"ibdev(%d,%d) failed: %S", gw.pad, gw.sad, ib_error_name(iberr));
+    }
+    return ud;
 }
 
 static void do_read(SOCKET s, int eos_byte)
@@ -105,6 +110,9 @@ static void do_read(SOCKET s, int eos_byte)
         if (ibcnt > 0) {
             send_all(s, buf, (int)ibcnt);
         }
+        if (ibsta & IB_ERR) {
+            log_printf(L"read addr %d: %S (ibsta 0x%04x, %d bytes)", gw.pad, ib_error_name(iberr), ibsta, ibcnt);
+        }
         if ((ibsta & IB_ERR) || (ibsta & IB_END) || ibcnt == 0) {
             break;
         }
@@ -118,6 +126,7 @@ static void do_write(SOCKET s, const char *data, unsigned len)
     int ud;
     unsigned n = len;
     int query;
+    int failed;
     if (len > LINE_MAX) {
         len = LINE_MAX;
         n = len;
@@ -135,8 +144,12 @@ static void do_write(SOCKET s, const char *data, unsigned len)
         return;
     }
     ibwrt(ud, buf, (long)n);
+    failed = (ibsta & IB_ERR) != 0;
+    if (failed) {
+        log_printf(L"write addr %d (%u bytes): %S (ibsta 0x%04x)", gw.pad, n, ib_error_name(iberr), ibsta);
+    }
     ibonl(ud, 0);
-    if (!(ibsta & IB_ERR) && gw.auto_read && query) {
+    if (!failed && gw.auto_read && query) {
         do_read(s, -1);
     }
 }
@@ -253,9 +266,14 @@ static void controller_command(SOCKET s, const char *cmd)
         }
         ud = ibdev(0, pad, IB_NO_SAD, timeout_code(gw.read_tmo_ms), 1, 0);
         if (ud >= 0) {
+            int failed;
             ibrsp(ud, &stb);
+            failed = (ibsta & IB_ERR) != 0;
+            if (failed) {
+                log_printf(L"serial poll addr %d: %S", pad, ib_error_name(iberr));
+            }
             ibonl(ud, 0);
-            if (!(ibsta & IB_ERR)) {
+            if (!failed) {
                 send_number(s, (unsigned char)stb);
             }
         }
@@ -278,6 +296,9 @@ static void controller_command(SOCKET s, const char *cmd)
         /* accepted for compatibility, nothing to save */
     } else if (starts_with(cmd, "help")) {
         send_text(s, "++addr ++auto ++eoi ++eos ++read ++read_tmo_ms ++ifc ++clr ++trg ++loc ++llo ++spoll ++srq ++ver ++mode ++rst\n");
+    } else if (starts_with(cmd, "quit")) {
+        gw.stop = TRUE;
+        PostMessageW(gw.win, WM_CLOSE, 0, 0);
     } else if (starts_with(cmd, "lines")) {
         short lines = 0;
         iblines(0, &lines);
@@ -424,6 +445,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPWSTR lpCmdLine, int nCmdShow
         MessageBoxW(NULL, L"GPIB driver GPB1: not available. Insert the card first.", L"GPIB gateway", MB_OK | MB_ICONERROR);
         return 1;
     }
+    ibsic(0);                              /* become controller in charge, like a Prologix at power-up */
+    log_printf(L"interface clear: %S", (ibsta & IB_ERR) ? ib_error_name(iberr) : "ok");
     if (WSAStartup(MAKEWORD(1, 1), &wsa) != 0) {
         MessageBoxW(NULL, L"Winsock not available", L"GPIB gateway", MB_OK | MB_ICONERROR);
         return 1;
