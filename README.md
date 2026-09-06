@@ -9,8 +9,9 @@ other PC Card GPIB vendor did either. This repository is the missing piece: the 
 written against the public TNT4882 documentation, the Windows CE 2.11 Card Services API, and
 the behaviour of the open-source Linux driver for the same chip.
 
-Status (2026-09-05): toolchain works end to end on macOS, hello-world validation on the
-device pending, driver in development. See [docs/plan.md](docs/plan.md).
+Status (2026-09-06): working. The driver loads on the 680e, and a Tektronix TDS 340 at
+address 1 answers `*IDN?`, serial polls and waveform downloads through it. See
+[docs/plan.md](docs/plan.md) for what is done and what is next.
 
 ## How it is built
 
