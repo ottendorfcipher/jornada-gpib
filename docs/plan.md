@@ -13,8 +13,9 @@ IEEE 488 instruments. First instrument: Tektronix TDS 340A oscilloscope.
 | 3 | Driver v1 | `gpib.dll` stream driver: Card Services bring-up, TNT4882C init, polled FIFO transfers, registry self-install | done 2026-09-06 |
 | 4 | Bring-up | register self-test, bus lines, `*IDN?` from the TDS 340A | done 2026-09-06 |
 | 5 | API + tools | NI-488.2-style C API over DeviceIoControl, `gpibtest.exe` | done 2026-09-06 (ib* subset) |
-| 6 | App | `gpibterm.exe`, an H/PC terminal for instruments | |
-| 7 | Driver v2 | FIFO transfers with the interrupt callback, 16-bit FIFO if the socket allows | |
+| 6 | App | `gpibterm.exe`, an H/PC terminal for instruments | built 2026-09-06, on device |
+| 7 | Gateway | `gpibsrv.exe`, Prologix-compatible GPIB-to-TCP gateway; PyVISA and `jornada gpib` on the Mac; GPIB pane in Jornada Sync | built 2026-09-06, first run pending |
+| 8 | Driver v2 | FIFO transfers with the interrupt callback, 16-bit FIFO if the socket allows | |
 
 ## Driver v1 design (phase 3)
 
@@ -60,6 +61,12 @@ through the polled 8-bit FIFO path, about 15 KB/s) all work.
 
 One transfer failed with "no listener" before the scope was confirmed in Talk/Listen mode;
 it has not recurred. Kept on the watch list.
+
+Lessons from the first gateway run: the assembler pads sections to 16 bytes, so import
+descriptors (20 bytes each) of several DLLs must come from one object or the loader misreads
+the second one (that froze the device: the first Winsock call jumped into the name strings);
+thread stacks are now 64 KB; and a freshly loaded driver must assert IFC itself before any
+addressing, which it now does at load and whenever it finds itself not in charge.
 
 ## Open questions to settle on the hardware
 

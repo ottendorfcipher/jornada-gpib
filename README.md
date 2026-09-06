@@ -45,7 +45,12 @@ include/rt/    freestanding runtime interface
 src/rt/        memcpy and friends, a printf-style formatter, EXE/DLL entry points
 src/ce/        Card Services run-time binding
 src/hello/     toolchain validation program
-src/gpib/      the driver (in progress)
+src/gpib/      the driver
+src/gpibapi/   NI-488.2 style C API over the driver
+src/gpibtest/  command-line bring-up tool
+src/gpibterm/  instrument terminal for the H/PC screen
+src/gpibsrv/   Prologix-compatible GPIB-to-TCP gateway (PyVISA on the Mac, see docs/pyvisa.md)
+src/nettest/   staged probe for threads and Winsock
 tools/         toolchain build script, thunk and import-table generators, assembly filter
 tests/         pytest suites for the tools, C tests for the runtime
 docs/          plan, toolchain notes, hardware and driver-model notes
