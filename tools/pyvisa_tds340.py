@@ -34,6 +34,7 @@ def main(argv: list[str]) -> int:
 
     gw = open_gateway(args.host, args.address, timeout_ms=10000)
     print("gateway:", gw.query("++ver"))
+    gw.write("HEADER OFF")       # answers without the command echo (":CURV 1,2,..." becomes "1,2,...")
     print("instrument:", gw.query("*IDN?"))
     print("event status:", gw.query("*ESR?"))
     print("CH1 scale:", gw.query("CH1:SCALE?"), "V/div; timebase:", gw.query("HORIZONTAL:MAIN:SCALE?"), "s/div")
@@ -47,7 +48,8 @@ def main(argv: list[str]) -> int:
         gw.write("DATA:STOP 500")
         t0 = time.time()
         raw = gw.query("CURVE?")
-        points = [int(v) for v in raw.split(",") if v.strip()]
+        body = raw.split(" ", 1)[1] if raw.startswith(":") else raw
+        points = [int(v) for v in body.split(",") if v.strip()]
         dt = time.time() - t0
         print(f"CURVE?: {len(points)} points in {dt:.1f} s, min {min(points)} max {max(points)}")
     return 0
