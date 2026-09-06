@@ -26,9 +26,11 @@
 #include "rt/rt.h"
 
 #define PORT 1234
-#define VERSION_TEXT "jornada-gpib gateway 0.2 (Prologix GPIB-ETHERNET compatible)"
+#define VERSION_TEXT "jornada-gpib gateway 0.3 (Prologix GPIB-ETHERNET compatible)"
 #define LINE_MAX 1024
 #define READ_MAX 8192
+#define RECV_TIMEOUT_MS 2000      /* how often serve_client wakes to re-check gw.stop */
+#define IDLE_LIMIT 60             /* drop a silent client after IDLE_LIMIT * RECV_TIMEOUT_MS (120 s) */
 #define ID_QUIT 1
 #define CLASS_NAME L"jornada-gpibsrv"
 
@@ -328,13 +330,37 @@ static void serve_client(SOCKET s)
     static char line[LINE_MAX];
     unsigned n = 0;
     int escaped = 0;
+    int idle_ticks = 0;
     char buf[256];
+    /* Bound the wait for the next client command so a half-open client (one that
+     * stopped sending but whose socket never closed, e.g. after a PPP drop) cannot
+     * wedge the single-client server forever. recv returns every RECV_TIMEOUT_MS; we
+     * re-check gw.stop, and after IDLE_LIMIT quiet ticks we drop the client so a new
+     * connection (which may carry ++quit) can be served. Instrument reads use the GPIB
+     * timeout inside do_read, not this socket timeout, so long transfers are unaffected. */
+    DWORD recv_timeout = RECV_TIMEOUT_MS;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char *)&recv_timeout, sizeof recv_timeout);
     for (;;) {
         int got = recv(s, buf, sizeof buf, 0);
         int i;
-        if (got <= 0) {
+        if (got == 0) {
             return;
         }
+        if (got < 0) {
+            int err = WSAGetLastError();
+            if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) {
+                if (gw.stop) {
+                    return;
+                }
+                if (++idle_ticks >= IDLE_LIMIT) {
+                    log_printf(L"client idle %d s, dropping", (IDLE_LIMIT * RECV_TIMEOUT_MS) / 1000);
+                    return;
+                }
+                continue;
+            }
+            return;
+        }
+        idle_ticks = 0;
         for (i = 0; i < got; i++) {
             char c = buf[i];
             if (escaped) {
