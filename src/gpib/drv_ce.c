@@ -28,7 +28,7 @@ typedef struct gpib_device {
     CARD_WINDOW_HANDLE window;
     volatile UINT8 *io;
     UINT32 granularity;
-    UINT32 io_base, io_length, config_index, window_16bit;
+    UINT32 io_base, io_length, config_index, window_16bit, io_access;
     BOOL configured;
     BOOL card_present;
     BOOL chip_ok;
@@ -131,6 +131,9 @@ static BOOL read_socket_from_registry(LPCWSTR active_key, CS_SOCKET *sock)
     return TRUE;
 }
 
+/* Choose the configuration entry to use. The PCMCIA-GPIB describes its I/O space only by
+ * address lines (5 lines = 32 bytes, any base the host likes), which Card Services reports
+ * as an I/O interface entry with no explicit ranges, so both forms are accepted. */
 static BOOL pick_io_window(gpib_device *d)
 {
     PARSED_CFTABLE cft[MAX_CFTABLE_ENTRIES];
@@ -146,23 +149,35 @@ static BOOL pick_io_window(gpib_device *d)
         return FALSE;
     }
     for (i = 0; i < n; i++) {
+        UINT32 lines_len = cft[i].NumIOAddrLines > 0 && cft[i].NumIOAddrLines < 16 ? 1u << cft[i].NumIOAddrLines : 0;
         log_printf(L"cftable[%u]: index 0x%x defaults %u iface %u/%u io entries %u base 0x%x len %u access %u lines %u vcc %u",
                    i, (UINT32)cft[i].ConfigIndex, (UINT32)cft[i].ContainsDefaults,
                    (UINT32)cft[i].IFacePresent, (UINT32)cft[i].IFaceType,
                    (UINT32)cft[i].NumIOEntries, cft[i].IOBase[0], cft[i].IOLength[0],
                    (UINT32)cft[i].IOAccess, (UINT32)cft[i].NumIOAddrLines,
                    (UINT32)cft[i].VccDescr.NominalV);
-        if (cft[i].NumIOEntries > 0 && cft[i].IOLength[0] >= GPIB_WINDOW_BYTES && best < 0) {
+        if (best >= 0) {
+            continue;
+        }
+        if (cft[i].NumIOEntries > 0 && cft[i].IOLength[0] >= GPIB_WINDOW_BYTES) {
             best = (int)i;
+            d->io_base = cft[i].IOBase[0];
+            d->io_length = cft[i].IOLength[0];
+        } else if (cft[i].NumIOEntries == 0 && lines_len >= GPIB_WINDOW_BYTES &&
+                   (!cft[i].IFacePresent || cft[i].IFaceType == 1)) {
+            best = (int)i;
+            d->io_base = 0;
+            d->io_length = lines_len;
         }
     }
     if (best < 0) {
         log_printf(L"no configuration entry with a %u-byte I/O window", GPIB_WINDOW_BYTES);
         return FALSE;
     }
-    d->io_base = cft[best].IOBase[0];
-    d->io_length = cft[best].IOLength[0];
     d->config_index = cft[best].ConfigIndex;
+    d->io_access = cft[best].IOAccess;
+    log_printf(L"using entry %d: config index 0x%x, I/O base 0x%x, %u bytes, access %u", best,
+               d->config_index, d->io_base, d->io_length, d->io_access);
     return TRUE;
 }
 
