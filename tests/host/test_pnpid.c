@@ -6,9 +6,37 @@
 
 static void test_crc_check_value(void)
 {
-    /* CRC-16/ARC check value for "123456789" is 0xBB3D. */
-    CHECK_EQ_INT(pnpid_crc16(0, (const uint8_t *)"123456789", 9), 0xBB3D);
+    /* Microsoft's table typo makes this differ from CRC-16/ARC (0xBB3D) whenever a byte
+     * step has the high nibble 0xF; "123456789" gives 0x593C with the Windows tables. */
+    CHECK_EQ_INT(pnpid_crc16(0, (const uint8_t *)"123456789", 9), 0x593C);
     CHECK_EQ_INT(pnpid_crc16(0, (const uint8_t *)"", 0), 0);
+    /* bytes that never hit the typo agree with CRC-16/ARC: 0x01 -> 0xC0C1 */
+    CHECK_EQ_INT(pnpid_crc16(0, (const uint8_t *)"\x01", 1), 0xC0C1);
+}
+
+/* The real NI PCMCIA-GPIB (Rev. C) as read on the HP Jornada 680e on 2026-09-06; Windows CE
+ * derived National_Instruments-PCMCIA-GPIB-6927 for it. */
+static void test_real_card(void)
+{
+    pnpid_builder b;
+    char out[PNPID_MAX];
+    static const uint8_t device[] = { 0x00, 0x00, 0xff };
+    static const uint8_t vers1[] = {
+        0x04, 0x01, 'N', 'a', 't', 'i', 'o', 'n', 'a', 'l', ' ', 'I', 'n', 's', 't', 'r', 'u', 'm',
+        'e', 'n', 't', 's', 0, 'P', 'C', 'M', 'C', 'I', 'A', '-', 'G', 'P', 'I', 'B', 0, 'R', 'e',
+        'v', '.', ' ', 'C', 0, 0, 0xff };
+    static const uint8_t config[] = { 0x01, 0x01, 0x00, 0x01, 0x0f };
+    static const uint8_t cftable[] = { 0xc1, 0xf1, 0x9d, 0x01, 0x55, 0xfc, 0x15, 0x65, 0x3f, 0xff, 0xff, 0x80, 0x14 };
+    static const uint8_t manfid[] = { 0x0b, 0x01, 0x82, 0x48 };
+    pnpid_begin(&b);
+    pnpid_add_tuple(&b, 0x01, device, sizeof device);
+    pnpid_add_tuple(&b, 0x15, vers1, sizeof vers1);
+    pnpid_add_tuple(&b, 0x1a, config, sizeof config);
+    pnpid_add_tuple(&b, 0x1b, cftable, sizeof cftable);
+    pnpid_add_tuple(&b, 0x20, manfid, sizeof manfid);
+    pnpid_add_tuple(&b, 0xff, manfid, 0);
+    pnpid_finish(&b, out, sizeof out);
+    CHECK(strcmp(out, "National_Instruments-PCMCIA-GPIB-6927") == 0);
 }
 
 static void test_strings_filtered(void)
@@ -98,6 +126,7 @@ static void test_truncation(void)
 int main(void)
 {
     test_crc_check_value();
+    test_real_card();
     test_strings_filtered();
     test_other_tuples_and_order();
     test_missing_strings();

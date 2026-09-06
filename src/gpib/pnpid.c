@@ -7,15 +7,34 @@
 #define CISTPL_CFTABLE_ENTRY_CODE 0x1B
 #define CISTPL_MANFID_CODE        0x20
 
+/* Windows computes the card CRC with a nibble-table CRC-16 (reflected polynomial 0x8005,
+ * init 0) whose high-nibble table carries a historical typo: the entry for 0xF0 is 0x4600
+ * where the polynomial gives 0x4400. Windows 95 shipped it that way and Windows CE copied
+ * the algorithm, so every PCMCIA identifier they generate depends on the typo. We reproduce
+ * it exactly; the identifier this yields for the PCMCIA-GPIB was confirmed on the device. */
+#define CRC_POLY_REFLECTED 0xA001
+#define CRC_HIGH_NIBBLE_TYPO_INDEX 15
+#define CRC_HIGH_NIBBLE_TYPO_VALUE 0x4600
+
+static uint16_t crc_table_entry(unsigned index)
+{
+    uint16_t c = (uint16_t)index;
+    int bit;
+    for (bit = 0; bit < 8; bit++) {
+        c = (c & 1) ? (uint16_t)((c >> 1) ^ CRC_POLY_REFLECTED) : (uint16_t)(c >> 1);
+    }
+    return c;
+}
+
 uint16_t pnpid_crc16(uint16_t crc, const uint8_t *data, unsigned len)
 {
     unsigned i;
-    int bit;
     for (i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (bit = 0; bit < 8; bit++) {
-            crc = (crc & 1) ? (uint16_t)((crc >> 1) ^ 0xA001) : (uint16_t)(crc >> 1);
-        }
+        unsigned tmp = (unsigned)(data[i] ^ (crc & 0xFF));
+        unsigned hi = tmp >> 4;
+        uint16_t high = hi == CRC_HIGH_NIBBLE_TYPO_INDEX ? CRC_HIGH_NIBBLE_TYPO_VALUE
+                                                          : crc_table_entry(hi << 4);
+        crc = (uint16_t)((crc >> 8) ^ crc_table_entry(tmp & 0x0F) ^ high);
     }
     return crc;
 }

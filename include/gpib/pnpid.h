@@ -2,7 +2,7 @@
  *
  * This is the key name device.exe looks for under HKLM\Drivers\PCMCIA. The string comes from
  * the card's CISTPL_VERS_1 manufacturer and product strings (spaces and commas replaced by
- * underscores, other characters outside 0x21..0x7E dropped) and a four-digit CRC-16 over the
+ * underscores, other characters outside 0x21..0x7E dropped) and a four-digit CRC over the
  * data bytes of the CISTPL_DEVICE, VERS_1, CONFIG, CFTABLE_ENTRY and MANFID tuples in CIS
  * order. Portable C, shared by the device tools and host tests.
  */
@@ -28,7 +28,7 @@ void pnpid_add_tuple(pnpid_builder *b, uint8_t code, const uint8_t *data, unsign
 /* Render the identifier; returns its length (0 if out is too small). */
 unsigned pnpid_finish(const pnpid_builder *b, char *out, unsigned cap);
 
-/* CRC-16/ARC (polynomial 0x8005 reflected, init 0), the CE "Windows 95" card CRC. */
+/* The Windows 95 / Windows CE card CRC: table-driven CRC-16 with Microsoft's table typo (see pnpid.c). */
 uint16_t pnpid_crc16(uint16_t crc, const uint8_t *data, unsigned len);
 
 #endif
